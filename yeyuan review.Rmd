@@ -8,8 +8,9 @@ output: #html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,
-                      message = FALSE,
-                      warning = FALSE)
+                      message = F,
+                      warning = T,
+                      fig.showtext=TRUE)
 ```
 
 
@@ -17,6 +18,11 @@ knitr::opts_chunk$set(echo = FALSE,
 require(knitr)
 require(tidyverse)
 require(showtext)
+require(lubridate)
+library(ggmap)
+library(maps)
+library(mapdata)
+require(gganimate)
 font_files()
 showtext_auto(enable = TRUE)
 font_add('Songti', 'Songti.ttc')
@@ -53,7 +59,7 @@ d. **水库不仅可以拦蓄洪水，更可以调峰滞峰**
 
 冶源水库位于山东省临朐县弥河上游，是一座具有防洪、灌溉、养殖和发电综合利用的大型水库[1]。水库下游的弥河流经临朐县城，然后向西北经过山东寿光市。本次洪水的主要受灾区域就在寿光市上口镇口子村等地。
 
-```{r}
+```{r,fig.width=2, fig.height=2}
 include_graphics("./Materials/yeyuan_map.jpg")
 ```
 
@@ -69,9 +75,9 @@ include_graphics("./Materials/yeyuan_map.jpg")
 
 * 网上的公开信息主要参考某位知友的答案，同时提供一些辅助信息。
 
-### 2.3 水位流量关系图
+### 2.3 水位库容关系图
 
-一般水库的水位流量关系图是查不到的，笔者根据山东水文站的数据，拟合了一个水位流量关系曲线。需要注意的是，这个估计是可能存在一些误差的。
+一般水库的水位库容关系图是查不到的，笔者根据山东水文站的数据，拟合了一个水位库容关系曲线。需要注意的是，这个估计是可能存在一些误差的。
 
 ```{r}
 # import data
@@ -89,7 +95,7 @@ prd$fit <- err$fit
 prd$uci <- err$fit + 1.96 * err$se.fit
 
 ggplot(prd,aes(x = level, y = fit)) +
-  theme_bw(base_size = 18) +
+  theme_bw(base_size = 18, base_family ="STFangsong") +
   geom_line(aes(color = "拟合曲线")) +
   #geom_smooth(aes(ymin = lci, ymax = uci, color = "fitted"), stat = "identity", linetype = "dashed",se = FALSE ) +
   geom_point(data = flow_storage, aes(x = level, y = storage, color = "实测数据点"))+
@@ -100,15 +106,23 @@ ggplot(prd,aes(x = level, y = fit)) +
 
 ```
 
-图2 山东省冶源水库水位流量关系曲线拟合图
+图2 山东省冶源水库水位库容关系曲线拟合图
 
-根据图2，笔者拟合的曲线为$storage = 0.5445*level^2 - 135.7698*level + 8466.8878$, 其中level是水库水位(m)，storage是水库库容(百万立方米)。 根据拟合曲线，笔者校核了水库的一些关键水位[2]，如图3所示。
+根据图2，笔者拟合的曲线为 
 
-```{r}
+$$
+storage = 0.5445*level^2 - 135.7698*level + 8466.8878
+$$ 
+
+其中level是水库水位(m)，storage是水库库容(百万立方米)。
+
+根据拟合曲线，笔者校核了水库的一些关键水位[2]，发现在137.72m以下的库容中，拟合曲线预测的较好；对于高水位的洪水，例如141m以上，拟合曲线会低估水库库容。鉴于一般情况下水库是不会达到允许最高蓄水位，所以现有的拟合关系曲线是可以接受的。
+
+```{r fig.showtext=TRUE}
 # import data.
 test_storage = readODS::read_ods("./Data/Test_level_storage.ods", col_names = T)
 res_levels = factor(test_storage$Level)
-item = test_sotrage$Item
+item = test_storage$Item
 # add test data.
 test_storage = test_storage %>% 
   mutate(Storage_prd = 0.5445*Level^2 -135.7698 *Level + 8466.8878) %>% 
@@ -131,7 +145,158 @@ ggplot(test_storage, aes(x = factor(Level))) +
 
 图3 实测水库库容与拟合库容的比较
 
-### 2.4 时间轴
+### 2.4 水库水位估算方法
 
-本文主要依据洪水发展的时间轴进行的，从2018年8月16日开始至2018年8月22日结束，其中8月19日8时至8月22日8时是本文分析的重点时期，笔者根据相关的泄洪操作将这72小时分为
+根据现有的出入库流量数据，我们可以通过上文的水位库容关系曲线来估算水库在洪水时期的实时水位。估算的起始点是2018年8月19日9时，水库库存为 0.8685 亿立方米，水库水位是 137.05 m。
+
+* 随后的逐个小时计算出入库水量，计算方法是出入流量乘以3600 (需要注意的是，这个估算方法可能会引入一些误差)；
+
+* 初始水库库容减去每个小时的水库出入库水量差值，即是每个小时的估算水库库容；
+
+* 通过估算水库库容和拟合的水位库容曲线即可推算每小时的估算水库水位。
+
+估算的水库和库容与水文系统通报的数据吻合较好；在洪水后期，估算的数据高估了水库的库容和水位，可能的原因包括：粗糙的水量估算方法、入库洪水的测量不太准确、从原始图表截图时存在误差等。但是这些误差并不影响后边的结论，下文将使用估算的数据进行分析。
+
+### 2.5 时间轴
+
+本文主要依据洪水发展的时间轴进行的(8月12日至8月22日)，主要分为三段：
+
+|时间轴    | 起始时间   |结束时间   |
+|------------|----------------|---------------|
+|洪水前期|2018-08-02 8:00|2018-08-19 8:00|
+|洪水过程|2018-08-19 8:00|2018-08-21 18:15|
+|洪水后期|2018-08-21 18:15|2018-08-21 23:59|
+
+## 3. 洪水前期分析
+
+这次寿光洪水的水源是“温比亚”台风，那我们首先要关注一下温比亚台风的行动路径(图4)。温比亚台风最初于8月12日在我国台湾省东南方海域形成，8月15日被升级为“热带风暴”，并命名为文艺。8月17日凌晨，温比亚在上海登陆，随后沿西北方向途径江苏、安徽、湖北和河南省；8月18日在河南省突然向东北方向转弯，途径山东和辽宁，最后进入渤海(部分内容引自维基百科)。
+
+```{r}
+# import tracks data.
+# data source:
+# http://typhoon.zjwater.gov.cn/default.aspx###
+tracks <- read.csv("./Data/typhoon_rumbia.csv")
+
+# data cleanning.
+
+tracks <- tracks %>% 
+  mutate(time = mdy_hm(time)) %>% 
+  rename(long = lng) %>% 
+  # add transition time.
+  mutate(frame = as.character(format(time,"%Y/%m/%d %H:%M")))
+#tracks
+```
+```{r fig.showtext=TRUE,fig.show='animate'}
+#make a map
+# http://eriqande.github.io/rep-res-web/lectures/making-maps-with-R.html
+tracks_box <- make_bbox(lon = tracks$long, lat = tracks$lat, f = 0.5)
+sq_map <- get_map(location = tracks_box, maptype = "satellite", source = "google", zoom = 5)
+
+p <- ggmap(sq_map) + 
+  theme(text = element_text(family = "Songti SC"))+
+  geom_point(data = tracks, mapping = aes(x = long, y = lat, color = pressure)) +
+  #geom_path(data = tracks, mapping = aes(x = long, y = lat, color = pressure))+
+  scale_color_continuous(name = "中心气压",low = "yellow", high = "red")+
+  # animation.
+  labs(title ="时间:{frame_time}", x = "东经", y = "北纬")+
+  transition_reveal(time,time)+
+  #ease_aes("linear")
+  NULL
+animate(p,renderer = ffmpeg_renderer())
+
+# save gifs if not exist.
+if(!file.exists("./Materials/rumbia_tracking.gif")){
+gif_ani = animate(p)
+anim_save("rumbia_tracking.gif", animation = gif_ani, path = "./Materials/")}
+```
+
+单纯就山东来说，最开始其实是在“打酱油”的角色，在8月15日台风未登陆以前，中央气象台给出的预报是途径河南一路向西北方向。8月17日10时，温比亚的台风预报图发生变化，预计台风可能会拐弯向东北方向进入山东省(图5)。所以一直到8月17日前，山东都不是温比亚台风的主角。所以很多读者提出的：“*一周前就有暴雨预报，为什么不采取措施？*”这点是不成立的。
+
+```{r}
+knitr::include_graphics("./Materials/2018-08-17_prediction.png")
+```
+
+图5 中央气象台在2018年8月17日10时发布的台风路径以及72小时预测
+
+我们再来看看冶源水库在8月17日前的操作(图6)。进入8月份以来，冶源水库的水位一直维持在防洪限制水位以下，符合汛期调度的规范。这里笔者想强调一句：*请勿开启上帝视角*。 很大一部分读者认为水库应该在17日之前就提前泄洪，其实这个想法是在不成立的。8月份已经接近汛期末端，而山东这几年旱情非常严重，如果水库运营者提前清空水库，然而台风没有过境山东，那么下半年的旱情将很难缓解；尤其下游寿光地区是蔬菜种植基地，蓄水量很大，旱情会造成非常大的影响。
+
+```{r fig.showtext=TRUE}
+# import daily data in Yeyuan.
+flood = read.csv("./Data/flood.csv",stringsAsFactors=FALSE, encoding = "utf-8")
+flood$datetime = ymd_hms(flood$datetime)
+
+flood_res_14 = flood %>% 
+  filter(station_name == "冶源水库") %>% 
+  filter(datetime <= ymd("2018-08-18"))%>% 
+  ggplot(aes(x = datetime, y = level, group  = station_name, color = station_name))+
+  geom_point()+
+  geom_path()+
+    annotate("text", x = ymd_hm("2018-08-15 00:00"), y = 137.9, label = "防洪限制水位(137.2m)")+
+
+  scale_x_datetime(name = "日期", labels = scales::date_format("%m-%d"))+
+  scale_y_continuous(name = "水库水位(m)", limits = c(136, 139))+
+  scale_color_discrete(name = NULL)+
+  geom_hline(yintercept  = 137.72, linetype = "dashed")+
+  theme_bw(base_size = 18,base_family ="STFangsong" )+
+    theme(legend.justification = c(0,0), legend.position = c(0.2, 0.7))+
+  NULL
+
+flood_res_14
+```
+
+图6 8月2日至8月17日冶源水库逐日水位图
+
+8月18日，中央气象台预报台风可能过境山东后，冶源水库在现有水位基础上提前泄洪，在8月18日21时起增加至150 立方米/秒(图7)。在8月19日9时冶源水库的水位降至137.06米。数据显示，**冶源水库已经在台风来临之前开始泄洪，没有出现为了一些“经济利益”故意维持水库蓄水的情况**。
+
+```{r}
+knitr::include_graphics("./Materials/notice_2018-8-18_2.png")
+```
+
+图7 寿光市在2018年8月18日发布的冶源水库*增加*泄洪的通知
+
+## 4. 寿光洪水过程
+
+### 4.1 出入库洪水过程
+
+8月19日11时起，冶源水库的入库流量超过 100 立方米每秒(图8)。
+
+```{r fig.showtext=TRUE}
+flood_event <- read.csv("./Data/storage_level_estimation.csv")
+
+# data cleaning.
+
+flood_event <- flood_event %>% 
+  select(-c(X, storage.1, X.1, a.., X54.45)) %>% 
+  rename("level" = level.m.) %>% 
+  mutate(datetime = mdy_hm(datetime))
+```
+```{r fig.showtext=TRUE}
+ggplot(flood_event, aes(x = datetime))+
+  geom_point(aes(y = inflow, color = "入库流量"))+
+  geom_line(aes(y = inflow, color = "入库流量"))+
+  geom_point(aes(y = outflow, color = "出库流量"))+
+  geom_line(aes(y = outflow, color = "出库流量"))+
+  theme_bw()+
+  scale_color_discrete(name = "")+
+  theme(legend.justification = c(0.0), legend.position = c(0.05, 0.8))+
+  labs(x = "日期", y = "出入库流量(立方米每秒)")
+```
+
+图8 
+
+### 4.2 
+
+### 4.4 小结
+
+## 5. 洪水后期
+
+## 6. Take-home points
+
+* 冶源水库已经在台风来临之前开始泄洪，没有出现为了一些“经济利益”故意维持水库蓄水的情况；
+* 此次洪水出现非常迅速，冶源水库在拦蓄洪水和滞留洪峰等方面做出了很多的恭喜；
+* 冶源水库在寿光洪水结束(8月22日)时，水库的水位仍然很高，没有出现“水库放空到库底“的情况。
+
+## References
+
+
 
