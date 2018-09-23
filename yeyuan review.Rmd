@@ -220,16 +220,18 @@ p <- ggmap(sq_map) +
   #geom_path(data = tracks, mapping = aes(x = long, y = lat, color = pressure))+
   scale_color_continuous(name = "中心气压",low = "yellow", high = "red")+
   # animation.
-  labs(title ="时间:{frame_time}", x = "东经", y = "北纬")+
+  labs(title = "2018年温比亚台风路径图",
+       subtitle ="时间:{frame_time}", x = "东经", y = "北纬")+
   transition_reveal(time,time)+
-  #ease_aes("linear")
-  NULL
+  
+    NULL
 animate(p,renderer = ffmpeg_renderer())
 
 # save gifs if not exist.
 if(!file.exists("./Materials/rumbia_tracking.gif")){
 gif_ani = animate(p)
-anim_save("rumbia_tracking.gif", animation = gif_ani, path = "./Materials/")}
+anim_save("rumbia_tracking.gif", animation = gif_ani, path = "./Materials/")
+}
 ```
 
 单纯就山东来说，最开始其实是在“打酱油”的角色，在8月15日台风未登陆以前，中央气象台给出的预报是途径河南一路向西北方向。8月17日10时，温比亚的台风预报图发生变化，预计台风可能会拐弯向东北方向进入山东省(图5)。所以一直到8月17日前，山东都不是温比亚台风的主角。所以很多读者提出的：“*一周前就有暴雨预报，为什么不采取措施？*”这点是不成立的。
